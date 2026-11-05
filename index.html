@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14243a">
+<meta name="description" content="PECOSTA: economía personal y de negocio">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg">
+<title>PECOSTA 6 · Android</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#172235;background:#f2f5f9;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}.top{background:#14243a;color:#fff;padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.brand{font-size:23px;font-weight:850;letter-spacing:1px}.sub{font-size:12px;color:#c6d2df}.status{font-size:12px;color:#c6d2df}
+main{max-width:900px;margin:18px auto;padding:0 13px 35px}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.card{background:#fff;border:1px solid #e0e7ef;border-radius:14px;padding:15px;margin-bottom:12px;box-shadow:0 2px 8px #15243a08}
+.stat span{font-size:12px;color:#69788c}.stat strong{display:block;font-size:21px;margin-top:6px}.green{color:#087c59}.red{color:#b93843}
+nav{display:flex;gap:7px;overflow:auto;margin:14px 0}button,.tab{border:0;border-radius:9px;padding:11px 13px;background:#e6edf5;color:#203047;font-weight:650;font-size:14px;cursor:pointer;white-space:nowrap}
+button.primary,.tab.active{background:#1b5d91;color:#fff}.tab{flex:1}
+.panel{display:none}.panel.active{display:block}
+label{display:block;font-size:13px;font-weight:650;margin:10px 0 5px}
+input,select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit;background:#fff;color:#172235}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #e7edf3;font-size:13px}th{color:#64748b}
+.small{font-size:12px;color:#718096}.hidden{display:none!important}.auth{max-width:440px;margin:25px auto}.wide{width:100%}
+.item{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid #e7edf3}.item:last-child{border:0}
+@media(max-width:560px){.cards{grid-template-columns:1fr 1fr}.cards .stat:last-child{grid-column:span 2}.stat strong{font-size:19px}.grid{grid-template-columns:1fr}main{margin:12px auto}.top{padding:13px}.brand{font-size:21px}}
+</style>
+</head>
+<body>
+<header class="top">
+ <div><div class="brand">PECOSTA 6</div><div class="sub">Tu economía, siempre contigo</div></div>
+ <div style="text-align:right"><div id="syncStatus" class="status">Preparando…</div><button id="logout" class="hidden" style="margin-top:6px">Salir</button></div>
+</header>
+<main>
+<section id="setup" class="card hidden">
+ <h2>Conexión de PECOSTA</h2><p>La conexión con tu proyecto Supabase está preparada.</p>
+ <label>URL del proyecto</label><input id="sbUrl">
+ <label>Clave pública</label><input id="sbKey">
+ <div class="actions"><button class="primary" id="saveConfig">Guardar conexión</button><button id="localOnly">Usar sin sincronizar</button></div>
+ <p class="small">Nunca introduzcas una clave secreta ni service_role.</p>
+</section>
+<section id="auth" class="card auth hidden">
+ <h2>Tu cuenta PECOSTA</h2><p class="small">Crea tu cuenta o entra con el mismo correo en todos tus dispositivos.</p>
+ <label>Correo electrónico</label><input id="email" type="email" autocomplete="email" placeholder="tu@correo.com">
+ <label>Contraseña</label><input id="password" type="password" autocomplete="current-password" minlength="6">
+ <div class="actions"><button id="signIn" class="primary">Entrar</button><button id="signUp">Crear cuenta</button></div>
+ <p id="authMsg" class="small"></p>
+</section>
+<section id="app" class="hidden">
+ <div class="cards">
+  <div class="card stat"><span>Saldo total</span><strong id="balance">0,00 €</strong></div>
+  <div class="card stat"><span>Ingresos este mes</span><strong id="income" class="green">0,00 €</strong></div>
+  <div class="card stat"><span>Gastos este mes</span><strong id="expense" class="red">0,00 €</strong></div>
+ </div>
+ <nav><button class="tab active" data-tab="add">Añadir</button><button class="tab" data-tab="history">Historial</button><button class="tab" data-tab="reports">Informes</button><button class="tab" data-tab="settings">Ajustes</button></nav>
+ <section id="add" class="panel active card">
+  <h2>Nuevo movimiento</h2>
+  <form id="form">
+   <div class="grid">
+    <div><label>Tipo</label><select id="kind"><option value="income">Ingreso</option><option value="expense">Gasto</option></select></div>
+    <div><label>Ámbito</label><select id="scope"><option value="personal">Personal</option><option value="business">Negocio</option></select></div>
+    <div><label>Importe (€)</label><input id="amount" type="number" min="0.01" step="0.01" required inputmode="decimal"></div>
+    <div><label>Fecha</label><input id="date" type="date" required></div>
+   </div>
+   <label>Concepto</label><input id="concept" maxlength="120" required placeholder="Ej. compra, venta, recibo…">
+   <label>Categoría</label><input id="category" maxlength="60" placeholder="Ej. alimentación, ventas…">
+   <button class="primary wide" type="submit" style="margin-top:15px">Guardar movimiento</button>
+  </form>
+ </section>
+ <section id="history" class="panel card">
+  <h2>Movimientos</h2>
+  <div class="grid"><div><label>Buscar</label><input id="search" placeholder="Concepto o categoría"></div><div><label>Ámbito</label><select id="filter"><option value="all">Todos</option><option value="personal">Personal</option><option value="business">Negocio</option></select></div></div>
+  <div id="list" style="margin-top:10px"></div>
+ </section>
+ <section id="reports" class="panel card">
+  <h2>Resumen mensual</h2><label>Mes</label><input id="reportMonth" type="month">
+  <div class="cards" style="margin-top:12px"><div class="card stat"><span>Ingresos</span><strong id="rIncome" class="green">0,00 €</strong></div><div class="card stat"><span>Gastos</span><strong id="rExpense" class="red">0,00 €</strong></div><div class="card stat"><span>Balance</span><strong id="rBalance">0,00 €</strong></div></div>
+  <h3>Gastos por categoría</h3><div id="categories" class="small">Sin datos.</div>
+ </section>
+ <section id="settings" class="panel card">
+  <h2>Saldos iniciales</h2><p class="small">Dinero que ya tenías antes de empezar a registrar movimientos.</p>
+  <div class="grid"><div><label>Personal (€)</label><input id="openingPersonal" type="number" step="0.01" inputmode="decimal"></div><div><label>Negocio (€)</label><input id="openingBusiness" type="number" step="0.01" inputmode="decimal"></div></div>
+  <button id="saveOpening" class="primary" style="margin-top:13px">Guardar saldos</button>
+  <hr style="border:0;border-top:1px solid #e7edf3;margin:18px 0">
+  <h3>Copias de seguridad</h3><div class="actions"><button id="export">Exportar copia JSON</button><label class="tab" style="display:inline-flex;align-items:center">Restaurar copia<input id="import" type="file" accept="application/json" class="hidden"></label></div>
+  <p class="small">Guarda una copia periódica en un lugar seguro. La restauración reemplaza los datos locales y sincroniza los registros restaurados.</p>
+  <p class="small">Cuenta: <span id="accountLabel">Modo local</span></p>
+ </section>
+</section>
+<p class="small" style="text-align:center;margin:20px 0">PECOSTA 6 · Android · Datos privados por cuenta</p>
+</main>
+<script src="./config.js"></script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+const $=id=>document.getElementById(id);
+const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(n)||0);
+const today=()=>new Date().toISOString().slice(0,10);
+let sb=null,user=null,records=[],opening={personal:0,business:0},localOnly=false,working=false;
+const cfg=JSON.parse(localStorage.getItem('pecosta_cfg')||'null')||window.PECOSTA_CONFIG||null;
+$('date').value=today();$('reportMonth').value=today().slice(0,7);
+const storageKey=()=>`pecosta6_${user?.id||'local'}`;
+function status(t,ok=false){$('syncStatus').textContent=t;$('syncStatus').style.color=ok?'#7ce0b5':'#c6d2df'}
+function show(id){['setup','auth','app'].forEach(k=>$(k).classList.toggle('hidden',k!==id))}
+function load(){try{const d=JSON.parse(localStorage.getItem(storageKey())||'{}');records=d.records||[];opening=d.opening||{personal:0,business:0}}catch{records=[];opening={personal:0,business:0}}}
+function save(){localStorage.setItem(storageKey(),JSON.stringify({records,opening,updated_at:new Date().toISOString()}))}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function totals(rows){const inc=rows.filter(r=>r.kind==='income').reduce((a,r)=>a+Number(r.amount),0),out=rows.filter(r=>r.kind==='expense').reduce((a,r)=>a+Number(r.amount),0);return {inc,out,net:inc-out}}
+function render(){
+ const alive=records.filter(r=>!r.deleted_at),month=$('reportMonth').value||today().slice(0,7),m=alive.filter(r=>r.date?.startsWith(month)),t=totals(m);
+ const all=totals(alive);$('balance').textContent=money(Number(opening.personal)+Number(opening.business)+all.net);
+ $('income').textContent=money(totals(alive.filter(r=>r.kind==='income'&&r.date?.startsWith(today().slice(0,7)))).inc);
+ $('expense').textContent=money(totals(alive.filter(r=>r.kind==='expense'&&r.date?.startsWith(today().slice(0,7)))).out);
+ $('rIncome').textContent=money(t.inc);$('rExpense').textContent=money(t.out);$('rBalance').textContent=money(t.net);
+ const cats={};m.filter(r=>r.kind==='expense').forEach(r=>cats[r.category||'Sin categoría']=(cats[r.category||'Sin categoría']||0)+Number(r.amount));
+ $('categories').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="item"><span>${esc(k)}</span><b>${money(v)}</b></div>`).join(''):'Sin gastos en este mes.';
+ $('openingPersonal').value=opening.personal;$('openingBusiness').value=opening.business;$('accountLabel').textContent=user?.email||'Solo dispositivo';
+ const q=$('search').value.toLowerCase(),f=$('filter').value;
+ const list=alive.filter(r=>(f==='all'||r.scope===f)&&(`${r.concept} ${r.category}`.toLowerCase().includes(q))).sort((a,b)=>b.date.localeCompare(a.date)||b.updated_at.localeCompare(a.updated_at));
+ $('list').innerHTML=list.length?list.map(r=>`<div class="item"><div><b>${esc(r.concept)}</b><div class="small">${esc(r.date)} · ${r.scope==='personal'?'Personal':'Negocio'} · ${esc(r.category||'Sin categoría')}</div><div class="small">${r.kind==='income'?'Ingreso':'Gasto'}</div></div><div style="text-align:right;white-space:nowrap"><b class="${r.kind==='income'?'green':'red'}">${r.kind==='income'?'+':'−'}${money(r.amount)}</b><br><button data-delete="${r.id}" style="margin-top:5px;padding:6px 9px">Borrar</button></div></div>`).join(''):'<p class="small">Todavía no hay movimientos.</p>';
+ document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('¿Marcar este movimiento como eliminado?'))return;const r=records.find(x=>x.id===b.dataset.delete);if(r){r.deleted_at=new Date().toISOString();r.updated_at=r.deleted_at;save();render();await syncRecord(r)}});
+}
+async function syncRecord(r){
+ if(!sb||!user||localOnly)return;
+ const row={id:r.id,user_id:user.id,kind:r.kind,scope:r.scope,amount:r.amount,date:r.date,category:r.category||'',concept:r.concept,updated_at:r.updated_at,deleted_at:r.deleted_at||null};
+ const {error}=await sb.from('transactions').upsert(row,{onConflict:'id'});if(error)throw error;
+}
+async function syncSettings(){
+ if(!sb||!user||localOnly)return;
+ const {error}=await sb.from('account_settings').upsert({user_id:user.id,opening_personal:Number(opening.personal)||0,opening_business:Number(opening.business)||0,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+ if(error)throw error;
+}
+async function syncAll(){
+ if(!sb||!user||localOnly)return;
+ if(working)return;working=true;status('Sincronizando…');
+ try{
+  const {data:remote,error}=await sb.from('transactions').select('*');if(error)throw error;
+  const map=new Map(records.map(r=>[r.id,r]));
+  for(const rr of remote||[]){const old=map.get(rr.id);if(!old||Date.parse(rr.updated_at||0)>Date.parse(old.updated_at||0))map.set(rr.id,rr)}
+  records=[...map.values()];save();
+  const {data:settings,error:se}=await sb.from('account_settings').select('*').maybeSingle();if(se)throw se;
+  if(settings){opening={personal:Number(settings.opening_personal)||0,business:Number(settings.opening_business)||0};save()}
+  else await syncSettings();
+  for(const r of records)await syncRecord(r);
+  status('Sincronizado',true);
+ }catch(e){console.error(e);status('Sin conexión · guardado local');}
+ finally{working=false;render()}
+}
+async function start(){
+ if(!cfg){show('setup');return}
+ try{sb=createClient(cfg.url,cfg.key);const {data:{session}}=await sb.auth.getSession();user=session?.user||null;
+ if(user){load();$('logout').classList.remove('hidden');show('app');render();await syncAll()}else show('auth');
+ }catch(e){status('Error de configuración');show('auth');$('authMsg').textContent=e.message}
+}
+$('saveConfig').onclick=()=>{const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim();if(!u.startsWith('https://')||!k){alert('Revisa URL y clave pública.');return}localStorage.setItem('pecosta_cfg',JSON.stringify({url:u,key:k}));location.reload()};
+$('sbUrl').value=cfg?.url||'';$('sbKey').value=cfg?.key||'';
+$('localOnly').onclick=()=>{localOnly=true;load();show('app');render();status('Solo este dispositivo')};
+$('signUp').onclick=async()=>{if(!sb)return;const {error}=await sb.auth.signUp({email:$('email').value.trim(),password:$('password').value});$('authMsg').textContent=error?'Error: '+error.message:'Cuenta solicitada. Revisa tu correo para confirmar el registro si está activada la confirmación.'};
+$('signIn').onclick=async()=>{const {data,error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error){$('authMsg').textContent=error.message;return}user=data.user;localOnly=false;load();show('app');$('logout').classList.remove('hidden');render();await syncAll()};
+$('logout').onclick=async()=>{await sb?.auth.signOut();user=null;show('auth');$('logout').classList.add('hidden')};
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab))});
+$('form').onsubmit=async e=>{e.preventDefault();const r={id:crypto.randomUUID(),kind:$('kind').value,scope:$('scope').value,amount:Math.round(Number($('amount').value)*100)/100,date:$('date').value,concept:$('concept').value.trim(),category:$('category').value.trim(),updated_at:new Date().toISOString(),deleted_at:null};if(!(r.amount>0)||!r.date||!r.concept)return;records.unshift(r);save();e.target.reset();$('date').value=today();render();try{await syncRecord(r);status('Movimiento sincronizado',true)}catch(e){status('Guardado local; pendiente de red')}};
+$('saveOpening').onclick=async()=>{opening={personal:Number($('openingPersonal').value)||0,business:Number($('openingBusiness').value)||0};save();render();try{await syncSettings();status('Saldos sincronizados',true)}catch(e){status('Saldos guardados localmente')}};
+$('search').oninput=render;$('filter').onchange=render;$('reportMonth').onchange=render;
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:6,records,opening,exported_at:new Date().toISOString()},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='PECOSTA_copia_'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!Array.isArray(d.records)||!d.opening)throw Error('Archivo incompatible');if(!confirm('Esto sustituirá los datos locales de esta cuenta. ¿Continuar?'))return;records=d.records;opening=d.opening;save();for(const r of records)await syncRecord(r);await syncSettings();render();alert('Copia restaurada.')}catch(err){alert('No se pudo restaurar: '+err.message)}e.target.value=''};
+window.addEventListener('online',syncAll);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncAll()});
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
+start();
+</script>
+</body></html>
