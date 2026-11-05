@@ -86,6 +86,8 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
   <hr style="border:0;border-top:1px solid #e7edf3;margin:18px 0">
   <h3>Copias de seguridad</h3><div class="actions"><button id="export">Exportar copia JSON</button><label class="tab" style="display:inline-flex;align-items:center">Restaurar copia<input id="import" type="file" accept="application/json" class="hidden"></label></div>
   <p class="small">Guarda una copia periódica en un lugar seguro. La restauración reemplaza los datos locales y sincroniza los registros restaurados.</p>
+  <div class="actions"><button id="syncNow" class="primary">Sincronizar ahora</button><span id="pendingCount" class="small">Pendientes: 0</span></div>
+  <p class="small">Los cambios sin conexión quedan marcados como pendientes y se intentan enviar al recuperar internet. Si editas el mismo dato en dos dispositivos sin conexión, prevalece la versión con fecha de modificación más reciente.</p>
   <p class="small">Cuenta: <span id="accountLabel">Modo local</span></p>
  </section>
 </section>
@@ -97,14 +99,15 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const $=id=>document.getElementById(id);
 const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(n)||0);
 const today=()=>new Date().toISOString().slice(0,10);
-let sb=null,user=null,records=[],opening={personal:0,business:0},localOnly=false,working=false;
+let sb=null,user=null,records=[],opening={personal:0,business:0},openingUpdatedAt=new Date(0).toISOString(),localOnly=false,working=false;
 const cfg=JSON.parse(localStorage.getItem('pecosta_cfg')||'null')||window.PECOSTA_CONFIG||null;
 $('date').value=today();$('reportMonth').value=today().slice(0,7);
 const storageKey=()=>`pecosta6_${user?.id||'local'}`;
 function status(t,ok=false){$('syncStatus').textContent=t;$('syncStatus').style.color=ok?'#7ce0b5':'#c6d2df'}
 function show(id){['setup','auth','app'].forEach(k=>$(k).classList.toggle('hidden',k!==id))}
-function load(){try{const d=JSON.parse(localStorage.getItem(storageKey())||'{}');records=d.records||[];opening=d.opening||{personal:0,business:0}}catch{records=[];opening={personal:0,business:0}}}
-function save(){localStorage.setItem(storageKey(),JSON.stringify({records,opening,updated_at:new Date().toISOString()}))}
+function load(){try{const d=JSON.parse(localStorage.getItem(storageKey())||'{}');records=d.records||[];opening=d.opening||{personal:0,business:0};openingUpdatedAt=d.openingUpdatedAt||new Date(0).toISOString()}catch{records=[];opening={personal:0,business:0};openingUpdatedAt=new Date(0).toISOString()}}
+function save(){localStorage.setItem(storageKey(),JSON.stringify({records,opening,openingUpdatedAt,updated_at:new Date().toISOString()}));updatePending()}
+function updatePending(){const n=records.filter(r=>r._sync_pending).length;$('pendingCount').textContent='Pendientes: '+n}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function totals(rows){const inc=rows.filter(r=>r.kind==='income').reduce((a,r)=>a+Number(r.amount),0),out=rows.filter(r=>r.kind==='expense').reduce((a,r)=>a+Number(r.amount),0);return {inc,out,net:inc-out}}
 function render(){
@@ -122,30 +125,47 @@ function render(){
  document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('¿Marcar este movimiento como eliminado?'))return;const r=records.find(x=>x.id===b.dataset.delete);if(r){r.deleted_at=new Date().toISOString();r.updated_at=r.deleted_at;save();render();await syncRecord(r)}});
 }
 async function syncRecord(r){
- if(!sb||!user||localOnly)return;
+ if(!sb||!user||localOnly){r._sync_pending=true;save();return false}
+ r._sync_pending=true;save();
  const row={id:r.id,user_id:user.id,kind:r.kind,scope:r.scope,amount:r.amount,date:r.date,category:r.category||'',concept:r.concept,updated_at:r.updated_at,deleted_at:r.deleted_at||null};
- const {error}=await sb.from('transactions').upsert(row,{onConflict:'id'});if(error)throw error;
+ const {error}=await sb.from('transactions').upsert(row,{onConflict:'id'});
+ if(error){status('Pendiente de sincronizar');throw error}
+ r._sync_pending=false;save();return true;
 }
 async function syncSettings(){
  if(!sb||!user||localOnly)return;
- const {error}=await sb.from('account_settings').upsert({user_id:user.id,opening_personal:Number(opening.personal)||0,opening_business:Number(opening.business)||0,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+ const row={user_id:user.id,opening_personal:Number(opening.personal)||0,opening_business:Number(opening.business)||0,updated_at:openingUpdatedAt};
+ const {error}=await sb.from('account_settings').upsert(row,{onConflict:'user_id'});
  if(error)throw error;
 }
 async function syncAll(){
- if(!sb||!user||localOnly)return;
- if(working)return;working=true;status('Sincronizando…');
+ if(!sb||!user||localOnly||working)return;
+ working=true;status('Sincronizando…');
  try{
   const {data:remote,error}=await sb.from('transactions').select('*');if(error)throw error;
-  const map=new Map(records.map(r=>[r.id,r]));
-  for(const rr of remote||[]){const old=map.get(rr.id);if(!old||Date.parse(rr.updated_at||0)>Date.parse(old.updated_at||0))map.set(rr.id,rr)}
-  records=[...map.values()];save();
+  const localMap=new Map(records.map(r=>[r.id,r])),remoteMap=new Map((remote||[]).map(r=>[r.id,r]));
+  const merged=[];
+  for(const [id,rr] of remoteMap){
+   const lr=localMap.get(id);
+   if(!lr){merged.push({...rr,_sync_pending:false});continue}
+   const lt=Date.parse(lr.updated_at||0),rt=Date.parse(rr.updated_at||0);
+   if(lr._sync_pending||lt>rt){merged.push(lr);await syncRecord(lr)}
+   else merged.push({...rr,_sync_pending:false});
+   localMap.delete(id);
+  }
+  for(const lr of localMap.values()){merged.push(lr);await syncRecord(lr)}
+  records=merged;save();
   const {data:settings,error:se}=await sb.from('account_settings').select('*').maybeSingle();if(se)throw se;
-  if(settings){opening={personal:Number(settings.opening_personal)||0,business:Number(settings.opening_business)||0};save()}
-  else await syncSettings();
-  for(const r of records)await syncRecord(r);
-  status('Sincronizado',true);
- }catch(e){console.error(e);status('Sin conexión · guardado local');}
- finally{working=false;render()}
+  if(settings){
+   if(Date.parse(settings.updated_at||0)>Date.parse(openingUpdatedAt||0)){
+    opening={personal:Number(settings.opening_personal)||0,business:Number(settings.opening_business)||0};
+    openingUpdatedAt=settings.updated_at;save();
+   }else if(Date.parse(openingUpdatedAt||0)>Date.parse(settings.updated_at||0))await syncSettings();
+  }else await syncSettings();
+  const pending=records.filter(r=>r._sync_pending).length;
+  status(pending?'Pendientes por enviar: '+pending:'Sincronizado',pending===0);
+ }catch(e){console.error(e);status('Sin conexión · cambios guardados localmente')}
+ finally{working=false;render();updatePending()}
 }
 async function start(){
  if(!cfg){show('setup');return}
@@ -161,10 +181,10 @@ $('signIn').onclick=async()=>{const {data,error}=await sb.auth.signInWithPasswor
 $('logout').onclick=async()=>{await sb?.auth.signOut();user=null;show('auth');$('logout').classList.add('hidden')};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab))});
 $('form').onsubmit=async e=>{e.preventDefault();const r={id:crypto.randomUUID(),kind:$('kind').value,scope:$('scope').value,amount:Math.round(Number($('amount').value)*100)/100,date:$('date').value,concept:$('concept').value.trim(),category:$('category').value.trim(),updated_at:new Date().toISOString(),deleted_at:null};if(!(r.amount>0)||!r.date||!r.concept)return;records.unshift(r);save();e.target.reset();$('date').value=today();render();try{await syncRecord(r);status('Movimiento sincronizado',true)}catch(e){status('Guardado local; pendiente de red')}};
-$('saveOpening').onclick=async()=>{opening={personal:Number($('openingPersonal').value)||0,business:Number($('openingBusiness').value)||0};save();render();try{await syncSettings();status('Saldos sincronizados',true)}catch(e){status('Saldos guardados localmente')}};
-$('search').oninput=render;$('filter').onchange=render;$('reportMonth').onchange=render;
-$('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:6,records,opening,exported_at:new Date().toISOString()},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='PECOSTA_copia_'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
-$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!Array.isArray(d.records)||!d.opening)throw Error('Archivo incompatible');if(!confirm('Esto sustituirá los datos locales de esta cuenta. ¿Continuar?'))return;records=d.records;opening=d.opening;save();for(const r of records)await syncRecord(r);await syncSettings();render();alert('Copia restaurada.')}catch(err){alert('No se pudo restaurar: '+err.message)}e.target.value=''};
+$('saveOpening').onclick=async()=>{opening={personal:Number($('openingPersonal').value)||0,business:Number($('openingBusiness').value)||0};openingUpdatedAt=new Date().toISOString();save();render();try{await syncSettings();status('Saldos sincronizados',true)}catch(e){status('Saldos guardados localmente')}};
+$('syncNow').onclick=syncAll;$('search').oninput=render;$('filter').onchange=render;$('reportMonth').onchange=render;
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:7,records,opening,openingUpdatedAt,exported_at:new Date().toISOString()},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='PECOSTA_copia_'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!Array.isArray(d.records)||!d.opening)throw Error('Archivo incompatible');if(!confirm('Esto sustituirá los datos locales de esta cuenta. ¿Continuar?'))return;records=d.records.map(r=>({...r,_sync_pending:true}));opening=d.opening;openingUpdatedAt=d.openingUpdatedAt||new Date().toISOString();save();for(const r of records)await syncRecord(r);await syncSettings();render();alert('Copia restaurada.')}catch(err){alert('No se pudo restaurar: '+err.message)}e.target.value=''};
 window.addEventListener('online',syncAll);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncAll()});
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.warn));
 start();
