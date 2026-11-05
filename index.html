@@ -7,7 +7,7 @@
 <meta name="description" content="PECOSTA: economía personal y de negocio">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg">
-<title>PECOSTA 7 · Android</title>
+<title>PECOSTA 9 · Android seguro</title>
 <style>
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#172235;background:#f2f5f9;font-synthesis:none}
 *{box-sizing:border-box}body{margin:0}.top{background:#14243a;color:#fff;padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px}
@@ -30,19 +30,19 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
 </head>
 <body>
 <header class="top">
- <div><div class="brand">PECOSTA 7</div><div class="sub">Tu economía, siempre contigo</div></div>
- <div style="text-align:right"><div id="syncStatus" class="status">Preparando…</div><button id="logout" class="hidden" style="margin-top:6px">Salir</button></div>
+ <div><div class="brand">PECOSTA 9</div><div class="sub">Tu economía, siempre contigo</div></div>
+ <div style="text-align:right"><div id="syncStatus" class="status">Preparando…</div><button id="logout" class="hidden" style="margin-top:6px">Bloquear y salir</button></div>
 </header>
 <main>
 <section id="setup" class="card hidden">
  <h2>Conexión de PECOSTA</h2><p>La conexión con tu proyecto Supabase está preparada.</p>
  <label>URL del proyecto</label><input id="sbUrl">
  <label>Clave pública</label><input id="sbKey">
- <div class="actions"><button class="primary" id="saveConfig">Guardar conexión</button><button id="localOnly">Usar sin sincronizar</button></div>
+ <div class="actions"><button class="primary" id="saveConfig">Guardar conexión</button></div>
  <p class="small">Nunca introduzcas una clave secreta ni service_role.</p>
 </section>
 <section id="auth" class="card auth hidden">
- <h2>Tu cuenta PECOSTA</h2><p class="small">Crea tu cuenta o entra con el mismo correo en todos tus dispositivos.</p>
+ <h2>Acceso protegido</h2><p class="small">Para entrar es obligatorio utilizar tu correo electrónico y contraseña. No hay acceso local ni anónimo.</p>
  <label>Correo electrónico</label><input id="email" type="email" autocomplete="email" placeholder="tu@correo.com">
  <label>Contraseña</label><input id="password" type="password" autocomplete="current-password" minlength="6">
  <div class="actions"><button id="signIn" class="primary">Entrar</button><button id="signUp">Crear cuenta</button></div>
@@ -95,7 +95,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
   <p class="small">Cuenta: <span id="accountLabel">Modo local</span></p>
  </section>
 </section>
-<p class="small" style="text-align:center;margin:20px 0">PECOSTA 7 · Android · Datos privados por cuenta</p>
+<p class="small" style="text-align:center;margin:20px 0">PECOSTA 9 · Android · Acceso con correo y contraseña</p>
 </main>
 <script src="./config.js"></script>
 <script type="module">
@@ -103,7 +103,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 const $=id=>document.getElementById(id);
 const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).format(Number(n)||0);
 const today=()=>new Date().toISOString().slice(0,10);
-let sb=null,user=null,records=[],opening={personal:0,business:0},openingUpdatedAt=new Date(0).toISOString(),localOnly=false,working=false;
+let sb=null,user=null,records=[],opening={personal:0,business:0},openingUpdatedAt=new Date(0).toISOString(),working=false;
 const cfg=JSON.parse(localStorage.getItem('pecosta_cfg')||'null')||window.PECOSTA_CONFIG||null;
 $('date').value=today();$('reportMonth').value=today().slice(0,7);$('reportYear').value=new Date().getFullYear();
 const storageKey=()=>`pecosta6_${user?.id||'local'}`;
@@ -140,7 +140,7 @@ function render(){
  document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('¿Marcar este movimiento como eliminado?'))return;const r=records.find(x=>x.id===b.dataset.delete);if(r){r.deleted_at=new Date().toISOString();r.updated_at=r.deleted_at;save();render();await syncRecord(r)}});
 }
 async function syncRecord(r){
- if(!sb||!user||localOnly){r._sync_pending=true;save();return false}
+ if(!sb||!user){r._sync_pending=true;save();return false}
  r._sync_pending=true;save();
  const row={id:r.id,user_id:user.id,kind:r.kind,scope:r.scope,amount:r.amount,date:r.date,category:r.category||'',concept:r.concept,updated_at:r.updated_at,deleted_at:r.deleted_at||null};
  const {error}=await sb.from('transactions').upsert(row,{onConflict:'id'});
@@ -148,13 +148,13 @@ async function syncRecord(r){
  r._sync_pending=false;save();return true;
 }
 async function syncSettings(){
- if(!sb||!user||localOnly)return;
+ if(!sb||!user)return;
  const row={user_id:user.id,opening_personal:Number(opening.personal)||0,opening_business:Number(opening.business)||0,updated_at:openingUpdatedAt};
  const {error}=await sb.from('account_settings').upsert(row,{onConflict:'user_id'});
  if(error)throw error;
 }
 async function syncAll(){
- if(!sb||!user||localOnly||working)return;
+ if(!sb||!user||working)return;
  working=true;status('Sincronizando…');
  try{
   const {data:remote,error}=await sb.from('transactions').select('*');if(error)throw error;
@@ -184,16 +184,20 @@ async function syncAll(){
 }
 async function start(){
  if(!cfg){show('setup');return}
- try{sb=createClient(cfg.url,cfg.key);const {data:{session}}=await sb.auth.getSession();user=session?.user||null;
+ try{
+ // Elimina cualquier sesión persistida por versiones anteriores y exige autenticación en cada apertura.
+ const projectRef=new URL(cfg.url).hostname.split('.')[0];
+ localStorage.removeItem(`sb-${projectRef}-auth-token`);
+ sb=createClient(cfg.url,cfg.key,{auth:{persistSession:false,autoRefreshToken:true,detectSessionInUrl:false}});
+ const {data:{session}}=await sb.auth.getSession();user=session?.user||null;
  if(user){load();$('logout').classList.remove('hidden');show('app');render();await syncAll()}else show('auth');
  }catch(e){status('Error de configuración');show('auth');$('authMsg').textContent=e.message}
 }
 $('saveConfig').onclick=()=>{const u=$('sbUrl').value.trim(),k=$('sbKey').value.trim();if(!u.startsWith('https://')||!k){alert('Revisa URL y clave pública.');return}localStorage.setItem('pecosta_cfg',JSON.stringify({url:u,key:k}));location.reload()};
 $('sbUrl').value=cfg?.url||'';$('sbKey').value=cfg?.key||'';
-$('localOnly').onclick=()=>{localOnly=true;load();show('app');render();status('Solo este dispositivo')};
 $('signUp').onclick=async()=>{if(!sb)return;const {error}=await sb.auth.signUp({email:$('email').value.trim(),password:$('password').value});$('authMsg').textContent=error?'Error: '+error.message:'Cuenta solicitada. Revisa tu correo para confirmar el registro si está activada la confirmación.'};
-$('signIn').onclick=async()=>{const {data,error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error){$('authMsg').textContent=error.message;return}user=data.user;localOnly=false;load();show('app');$('logout').classList.remove('hidden');render();await syncAll()};
-$('logout').onclick=async()=>{await sb?.auth.signOut();user=null;show('auth');$('logout').classList.add('hidden')};
+$('signIn').onclick=async()=>{const {data,error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error){$('authMsg').textContent=error.message;return}user=data.user;load();show('app');$('logout').classList.remove('hidden');render();await syncAll()};
+$('logout').onclick=async()=>{try{await sb?.auth.signOut()}finally{user=null;records=[];opening={personal:0,business:0};show('auth');$('logout').classList.add('hidden');$('authMsg').textContent='Sesión cerrada. Introduce tu correo y contraseña para volver a entrar.';status('Bloqueado')}};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab))});
 $('form').onsubmit=async e=>{e.preventDefault();const r={id:crypto.randomUUID(),kind:$('kind').value,scope:$('scope').value,amount:Math.round(Number($('amount').value)*100)/100,date:$('date').value,concept:$('concept').value.trim(),category:$('category').value.trim(),updated_at:new Date().toISOString(),deleted_at:null};if(!(r.amount>0)||!r.date||!r.concept)return;records.unshift(r);save();e.target.reset();$('date').value=today();render();try{await syncRecord(r);status('Movimiento sincronizado',true)}catch(e){status('Guardado local; pendiente de red')}};
 $('saveOpening').onclick=async()=>{opening={personal:Number($('openingPersonal').value)||0,business:Number($('openingBusiness').value)||0};openingUpdatedAt=new Date().toISOString();save();render();try{await syncSettings();status('Saldos sincronizados',true)}catch(e){status('Saldos guardados localmente')}};
