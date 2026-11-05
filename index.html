@@ -7,7 +7,7 @@
 <meta name="description" content="PECOSTA: economía personal y de negocio">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icon.svg">
-<title>PECOSTA 6 · Android</title>
+<title>PECOSTA 7 · Android</title>
 <style>
 :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#172235;background:#f2f5f9;font-synthesis:none}
 *{box-sizing:border-box}body{margin:0}.top{background:#14243a;color:#fff;padding:15px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px}
@@ -30,7 +30,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
 </head>
 <body>
 <header class="top">
- <div><div class="brand">PECOSTA 6</div><div class="sub">Tu economía, siempre contigo</div></div>
+ <div><div class="brand">PECOSTA 7</div><div class="sub">Tu economía, siempre contigo</div></div>
  <div style="text-align:right"><div id="syncStatus" class="status">Preparando…</div><button id="logout" class="hidden" style="margin-top:6px">Salir</button></div>
 </header>
 <main>
@@ -75,9 +75,13 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
   <div id="list" style="margin-top:10px"></div>
  </section>
  <section id="reports" class="panel card">
-  <h2>Resumen mensual</h2><label>Mes</label><input id="reportMonth" type="month">
-  <div class="cards" style="margin-top:12px"><div class="card stat"><span>Ingresos</span><strong id="rIncome" class="green">0,00 €</strong></div><div class="card stat"><span>Gastos</span><strong id="rExpense" class="red">0,00 €</strong></div><div class="card stat"><span>Balance</span><strong id="rBalance">0,00 €</strong></div></div>
+  <h2>Informes económicos</h2>
+  <div class="grid"><div><label>Periodo</label><select id="reportMode"><option value="month">Mensual</option><option value="year">Anual</option></select></div><div id="reportMonthWrap"><label>Mes de referencia</label><input id="reportMonth" type="month"></div><div id="reportYearWrap" class="hidden"><label>Año de referencia</label><input id="reportYear" type="number" min="2000" max="2100" step="1"></div></div>
+  <div class="cards" style="margin-top:12px"><div class="card stat"><span>Ingresos del periodo</span><strong id="rIncome" class="green">0,00 €</strong></div><div class="card stat"><span>Gastos del periodo</span><strong id="rExpense" class="red">0,00 €</strong></div><div class="card stat"><span>Resultado del periodo</span><strong id="rBalance">0,00 €</strong></div></div>
+  <h3 id="comparisonTitle">Comparación con el mes anterior</h3><div id="comparison" class="small">Sin datos.</div>
+  <h3 id="annualTitle" class="hidden">Desglose mensual del año</h3><div id="annualBreakdown" class="hidden"></div>
   <h3>Gastos por categoría</h3><div id="categories" class="small">Sin datos.</div>
+  <h3>Saldo acumulado al cierre</h3><div id="accumulated" class="small">—</div>
  </section>
  <section id="settings" class="panel card">
   <h2>Saldos iniciales</h2><p class="small">Dinero que ya tenías antes de empezar a registrar movimientos.</p>
@@ -91,7 +95,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 7px
   <p class="small">Cuenta: <span id="accountLabel">Modo local</span></p>
  </section>
 </section>
-<p class="small" style="text-align:center;margin:20px 0">PECOSTA 6 · Android · Datos privados por cuenta</p>
+<p class="small" style="text-align:center;margin:20px 0">PECOSTA 7 · Android · Datos privados por cuenta</p>
 </main>
 <script src="./config.js"></script>
 <script type="module">
@@ -101,7 +105,7 @@ const money=n=>new Intl.NumberFormat('es-ES',{style:'currency',currency:'EUR'}).
 const today=()=>new Date().toISOString().slice(0,10);
 let sb=null,user=null,records=[],opening={personal:0,business:0},openingUpdatedAt=new Date(0).toISOString(),localOnly=false,working=false;
 const cfg=JSON.parse(localStorage.getItem('pecosta_cfg')||'null')||window.PECOSTA_CONFIG||null;
-$('date').value=today();$('reportMonth').value=today().slice(0,7);
+$('date').value=today();$('reportMonth').value=today().slice(0,7);$('reportYear').value=new Date().getFullYear();
 const storageKey=()=>`pecosta6_${user?.id||'local'}`;
 function status(t,ok=false){$('syncStatus').textContent=t;$('syncStatus').style.color=ok?'#7ce0b5':'#c6d2df'}
 function show(id){['setup','auth','app'].forEach(k=>$(k).classList.toggle('hidden',k!==id))}
@@ -111,13 +115,24 @@ function updatePending(){const n=records.filter(r=>r._sync_pending).length;$('pe
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function totals(rows){const inc=rows.filter(r=>r.kind==='income').reduce((a,r)=>a+Number(r.amount),0),out=rows.filter(r=>r.kind==='expense').reduce((a,r)=>a+Number(r.amount),0);return {inc,out,net:inc-out}}
 function render(){
- const alive=records.filter(r=>!r.deleted_at),month=$('reportMonth').value||today().slice(0,7),m=alive.filter(r=>r.date?.startsWith(month)),t=totals(m);
+ const alive=records.filter(r=>!r.deleted_at),month=$('reportMonth').value||today().slice(0,7),mode=$('reportMode').value,year=mode==='year'?String($('reportYear').value||new Date().getFullYear()):month.slice(0,4);
+ const periodRows=alive.filter(r=>mode==='year'?r.date?.startsWith(year):r.date?.startsWith(month)),t=totals(periodRows);
  const all=totals(alive);$('balance').textContent=money(Number(opening.personal)+Number(opening.business)+all.net);
- $('income').textContent=money(totals(alive.filter(r=>r.kind==='income'&&r.date?.startsWith(today().slice(0,7)))).inc);
- $('expense').textContent=money(totals(alive.filter(r=>r.kind==='expense'&&r.date?.startsWith(today().slice(0,7)))).out);
+ const thisMonth=alive.filter(r=>r.date?.startsWith(today().slice(0,7)));
+ $('income').textContent=money(totals(thisMonth.filter(r=>r.kind==='income')).inc);
+ $('expense').textContent=money(totals(thisMonth.filter(r=>r.kind==='expense')).out);
  $('rIncome').textContent=money(t.inc);$('rExpense').textContent=money(t.out);$('rBalance').textContent=money(t.net);
- const cats={};m.filter(r=>r.kind==='expense').forEach(r=>cats[r.category||'Sin categoría']=(cats[r.category||'Sin categoría']||0)+Number(r.amount));
- $('categories').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="item"><span>${esc(k)}</span><b>${money(v)}</b></div>`).join(''):'Sin gastos en este mes.';
+ $('reportMonthWrap').classList.toggle('hidden',mode==='year');$('reportYearWrap').classList.toggle('hidden',mode!=='year');
+ $('comparisonTitle').textContent=mode==='year'?'Comparación con el año anterior':'Comparación con el mes anterior';
+ $('annualTitle').classList.toggle('hidden',mode!=='year');$('annualBreakdown').classList.toggle('hidden',mode!=='year');
+ let prevKey;if(mode==='year')prevKey=String(Number(year)-1);else{const d=new Date(Number(year),Number(month.slice(5,7))-2,1);prevKey=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
+ const prevRows=alive.filter(r=>mode==='year'?r.date?.startsWith(prevKey):r.date?.startsWith(prevKey));const prev=totals(prevRows);
+ const delta=(a,b)=>{const diff=a-b;return `${diff>=0?'+':'−'}${money(Math.abs(diff))}`};
+ $('comparison').innerHTML=`<div class="item"><span>Ingresos anteriores</span><b>${money(prev.inc)}</b></div><div class="item"><span>Gastos anteriores</span><b>${money(prev.out)}</b></div><div class="item"><span>Diferencia de ingresos</span><b>${delta(t.inc,prev.inc)}</b></div><div class="item"><span>Diferencia de gastos</span><b>${delta(t.out,prev.out)}</b></div>`;
+ const cats={};periodRows.filter(r=>r.kind==='expense').forEach(r=>cats[r.category||'Sin categoría']=(cats[r.category||'Sin categoría']||0)+Number(r.amount));
+ $('categories').innerHTML=Object.keys(cats).length?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="item"><span>${esc(k)}</span><b>${money(v)}</b></div>`).join(''):'Sin gastos en este periodo.';
+ if(mode==='year'){$('annualBreakdown').innerHTML=Array.from({length:12},(_,i)=>{const key=year+'-'+String(i+1).padStart(2,'0'),mt=totals(alive.filter(r=>r.date?.startsWith(key)));return `<div class="item"><span>${new Date(Number(year),i,1).toLocaleDateString('es-ES',{month:'long'})}</span><span>Ing. ${money(mt.inc)} · Gast. ${money(mt.out)} · <b>${money(mt.net)}</b></span></div>`}).join('')}
+ const cutoff=mode==='year'?year+'-12-31':month+'-31';const accrued=totals(alive.filter(r=>r.date&&r.date<=cutoff));$('accumulated').textContent=money(Number(opening.personal)+Number(opening.business)+accrued.net);
  $('openingPersonal').value=opening.personal;$('openingBusiness').value=opening.business;$('accountLabel').textContent=user?.email||'Solo dispositivo';
  const q=$('search').value.toLowerCase(),f=$('filter').value;
  const list=alive.filter(r=>(f==='all'||r.scope===f)&&(`${r.concept} ${r.category}`.toLowerCase().includes(q))).sort((a,b)=>b.date.localeCompare(a.date)||b.updated_at.localeCompare(a.updated_at));
@@ -182,7 +197,7 @@ $('logout').onclick=async()=>{await sb?.auth.signOut();user=null;show('auth');$(
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab))});
 $('form').onsubmit=async e=>{e.preventDefault();const r={id:crypto.randomUUID(),kind:$('kind').value,scope:$('scope').value,amount:Math.round(Number($('amount').value)*100)/100,date:$('date').value,concept:$('concept').value.trim(),category:$('category').value.trim(),updated_at:new Date().toISOString(),deleted_at:null};if(!(r.amount>0)||!r.date||!r.concept)return;records.unshift(r);save();e.target.reset();$('date').value=today();render();try{await syncRecord(r);status('Movimiento sincronizado',true)}catch(e){status('Guardado local; pendiente de red')}};
 $('saveOpening').onclick=async()=>{opening={personal:Number($('openingPersonal').value)||0,business:Number($('openingBusiness').value)||0};openingUpdatedAt=new Date().toISOString();save();render();try{await syncSettings();status('Saldos sincronizados',true)}catch(e){status('Saldos guardados localmente')}};
-$('syncNow').onclick=syncAll;$('search').oninput=render;$('filter').onchange=render;$('reportMonth').onchange=render;
+$('syncNow').onclick=syncAll;$('search').oninput=render;$('filter').onchange=render;$('reportMonth').onchange=render;$('reportYear').onchange=render;$('reportMode').onchange=render;
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:7,records,opening,openingUpdatedAt,exported_at:new Date().toISOString()},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='PECOSTA_copia_'+today()+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
 $('import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!Array.isArray(d.records)||!d.opening)throw Error('Archivo incompatible');if(!confirm('Esto sustituirá los datos locales de esta cuenta. ¿Continuar?'))return;records=d.records.map(r=>({...r,_sync_pending:true}));opening=d.opening;openingUpdatedAt=d.openingUpdatedAt||new Date().toISOString();save();for(const r of records)await syncRecord(r);await syncSettings();render();alert('Copia restaurada.')}catch(err){alert('No se pudo restaurar: '+err.message)}e.target.value=''};
 window.addEventListener('online',syncAll);document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncAll()});
